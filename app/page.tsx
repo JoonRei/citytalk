@@ -6,10 +6,11 @@ import {
   MapPin, Users, Lock,
   Minimize2, MessageCircle, MoreHorizontal,
   Trash2, Smile, Hash, Trophy, TrendingUp, ChevronRight,
-  Clock 
+  Clock, Bell, Navigation
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getDetailedLocation } from '../lib/location';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 // --- DYNAMIC MAP IMPORT ---
 const MapInterface = dynamic(() => import('../components/MapInterface'), { 
@@ -19,7 +20,7 @@ const MapInterface = dynamic(() => import('../components/MapInterface'), {
 
 // --- CONSTANTS ---
 const POST_TTL = 24 * 60 * 60 * 1000; 
-const SESSION_DURATION = 12 * 60 * 60 * 1000; // 12 Hours Session Timeout
+const SESSION_DURATION = 12 * 60 * 60 * 1000; 
 
 // --- UTILS ---
 const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
@@ -31,6 +32,18 @@ const scrubSignal = (text: string) => {
   });
   return cleaned;
 };
+
+// --- ADDED DISTANCE HELPER HERE ---
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; 
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  return Math.round(R * c);
+}
 
 const getRelativeTime = (dateString: string) => {
   const date = new Date(dateString);
@@ -82,10 +95,18 @@ export default function CityTalk() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isNameLocked, setIsNameLocked] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  
+  const [notification, setNotification] = useState<{author: string, msg: string} | null>(null);
+
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tick, setTick] = useState(0); 
 
   const [isInputFocused, setIsInputFocused] = useState(false);
+
+  const [isTyping, setIsTyping] = useState(false);
+  const [remoteTyping, setRemoteTyping] = useState(false);
+  const typingTimeoutRef = useRef<any>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const repliesEndRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +114,12 @@ export default function CityTalk() {
   const triggerToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const triggerNotification = (author: string, msg: string) => {
+    setNotification({ author, msg });
+    audioRef.current?.play().catch(() => {});
+    setTimeout(() => setNotification(null), 5000);
   };
 
   const activePosts = useMemo(() => {
@@ -117,16 +144,13 @@ export default function CityTalk() {
   }, [activePosts]);
 
   useEffect(() => {
-    // 1. Load Device ID
     let storedId = localStorage.getItem('citytalk_device_token');
     let storedName = localStorage.getItem('citytalk_signal_id');
     let lastChange = localStorage.getItem('citytalk_name_date');
-
-    // 2. Load Session (New Logic)
     let sessionExpiry = localStorage.getItem('citytalk_session_expiry');
+    
     if (sessionExpiry && parseInt(sessionExpiry) > Date.now()) {
-        setIsAuthorized(true); // Skip welcome screen
-        // Refresh session
+        setIsAuthorized(true);
         localStorage.setItem('citytalk_session_expiry', (Date.now() + SESSION_DURATION).toString());
     }
 
@@ -146,7 +170,7 @@ export default function CityTalk() {
       }
     }
     setDeviceId(storedId);
-    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
     const timer = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(timer);
@@ -179,16 +203,28 @@ export default function CityTalk() {
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'replies' }, (payload) => {
         if (selectedPost && payload.new.post_id === selectedPost.id) {
-          if (selectedPost.device_id === deviceId && replies.length === 0) {
-            audioRef.current?.play().catch(() => {});
-            triggerToast("Someone replied to you!");
-          }
-          setReplies(prev => [...prev, payload.new]);
+           setReplies(prev => [...prev, payload.new]);
+           if (payload.new.device_id !== deviceId) setRemoteTyping(false);
+        }
+
+        if (selectedPost && selectedPost.device_id === deviceId && payload.new.device_id !== deviceId) {
+             if (isSidebarMinimized) {
+                triggerNotification(payload.new.author_name, payload.new.content);
+             } 
         }
       })
+      .on('broadcast', { event: 'typing' }, (payload) => {
+         if (selectedPost && payload.payload.post_id === selectedPost.id && payload.payload.device_id !== deviceId) {
+             setRemoteTyping(true);
+             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+             typingTimeoutRef.current = setTimeout(() => setRemoteTyping(false), 3000);
+         }
+      })
       .subscribe();
+      
+    channelRef.current = channel; 
     return () => { supabase.removeChannel(channel); };
-  }, [isAuthorized, selectedPost?.id, deviceId, replies.length]);
+  }, [isAuthorized, selectedPost, deviceId, isSidebarMinimized]);
 
   useEffect(() => {
     if (selectedPost) {
@@ -208,7 +244,18 @@ export default function CityTalk() {
     if (repliesEndRef.current) {
         repliesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [replies]);
+  }, [replies, remoteTyping]);
+
+  const handleTyping = (text: string) => {
+    setReplyInput(text);
+    if (!selectedPost) return;
+    
+    channelRef.current?.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { post_id: selectedPost.id, device_id: deviceId }
+    });
+  };
 
   const handleFindCity = async () => {
     const loc = await getDetailedLocation();
@@ -279,10 +326,10 @@ export default function CityTalk() {
         triggerToast("Failed to reply.");
     } else {
       setReplyInput("");
+      setRemoteTyping(false); 
     }
   };
 
-  // --- START TALKING (WITH SESSION SAVE) ---
   const handleStartTalking = () => {
     setIsInitializing(true); 
     let step = 0; 
@@ -292,7 +339,6 @@ export default function CityTalk() {
             clearInterval(interval); 
             setIsInitializing(false); 
             setIsAuthorized(true); 
-            // SAVE SESSION HERE
             localStorage.setItem('citytalk_session_expiry', (Date.now() + SESSION_DURATION).toString());
         } 
     }, 1400); 
@@ -373,7 +419,6 @@ export default function CityTalk() {
   }
 
   // --- MAIN APPLICATION ---
-  // Added 'select-none' here to disable copying generally
   return (
     <main className="h-[100dvh] w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30 select-none">
       
@@ -387,16 +432,13 @@ export default function CityTalk() {
         />
       </div>
 
-      {/* 2. Top HUD (Responsive Padding) */}
+      {/* 2. Top HUD */}
       <div className="absolute top-0 left-0 right-0 z-30 p-4 md:p-6 pointer-events-none flex justify-between items-start">
-        
-        {/* Left: Active Users */}
         <div className="bg-zinc-900/90 backdrop-blur-md px-4 py-2 md:px-5 md:py-2.5 rounded-full pointer-events-auto border border-white/10 flex items-center gap-3 shadow-xl hover:bg-black transition-all">
            <div className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
            <span className="text-[11px] md:text-[13px] font-bold text-white">{activePosts.length} online</span>
         </div>
-
-        {/* Right: Trending Button */}
+        
         <div className="pointer-events-auto relative">
            <button 
              onClick={() => setShowLeaderboard(!showLeaderboard)}
@@ -409,8 +451,7 @@ export default function CityTalk() {
               <Trophy size={14} className="md:w-4 md:h-4" />
               <span className="text-[11px] md:text-[13px] font-bold">Top Cities</span>
            </button>
-
-           {/* Leaderboard Popup (Right Aligned) */}
+           {/* Leaderboard Popup */}
            {showLeaderboard && (
              <div className="absolute top-full right-0 mt-3 w-64 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-2 fade-in z-50">
                 <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2 bg-white/5">
@@ -452,7 +493,7 @@ export default function CityTalk() {
         </div>
       </div>
 
-      {/* 3. Toast Notifications */}
+      {/* 3. Toast Notifications (System) */}
       {toast && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[150] animate-in fade-in slide-in-from-top-4 w-full px-4 flex justify-center">
           <div className="px-6 py-3 bg-zinc-800 border border-white/20 rounded-full shadow-2xl flex items-center gap-3">
@@ -462,7 +503,26 @@ export default function CityTalk() {
         </div>
       )}
 
-      {/* 4. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
+      {/* 4. NEW MESSAGE NOTIFICATION (Interactive) */}
+      {notification && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[160] animate-in fade-in zoom-in slide-in-from-top-4 w-full px-4 flex justify-center pointer-events-none">
+            <button 
+               onClick={() => { setIsSidebarMinimized(false); setNotification(null); }}
+               className="pointer-events-auto flex items-center gap-4 bg-zinc-900/90 backdrop-blur-xl border border-blue-500/30 p-4 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] max-w-sm w-full hover:bg-zinc-800 transition-all group"
+            >
+                <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                   <Bell size={20} className="animate-pulse" />
+                </div>
+                <div className="flex flex-col text-left overflow-hidden">
+                    <span className="text-[12px] text-blue-400 font-bold uppercase tracking-wider">New Reply</span>
+                    <span className="text-[14px] text-white font-bold truncate">{notification.author}</span>
+                    <span className="text-[12px] text-zinc-400 truncate">{notification.msg}</span>
+                </div>
+            </button>
+        </div>
+      )}
+
+      {/* 5. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
       <div 
         className={`fixed left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none transition-all duration-300 ease-out 
         ${isInputFocused ? 'bottom-[45vh] md:bottom-0' : 'bottom-0'}`}
@@ -531,7 +591,7 @@ export default function CityTalk() {
         </div>
       </div>
 
-      {/* 5. SIDEBAR WITH EPHEMERAL TIMERS (RESPONSIVE) */}
+      {/* 5. SIDEBAR WITH TYPING INDICATORS */}
       {selectedPost && (
         <>
         {isSidebarMinimized && (
@@ -555,7 +615,19 @@ export default function CityTalk() {
                 </div>
                 <div>
                     <h3 className="text-[15px] font-bold text-white">Conversation</h3>
-                    <p className="text-[12px] text-zinc-400 font-medium">Near {selectedPost.city}</p>
+                    {/* --- UPDATED: ADDED DISTANCE HERE --- */}
+                    <div className="flex items-center gap-2 text-[12px] text-zinc-400 font-medium">
+                        <span>Near {selectedPost.city}</span>
+                        {userLocation && (
+                           <>
+                           <span className="text-zinc-600">•</span>
+                           <span className="text-emerald-400 flex items-center gap-1">
+                               <Navigation size={10} className="inline" />
+                               {getDistance(userLocation.lat, userLocation.lng, selectedPost.lat, selectedPost.lng).toLocaleString()} km away
+                           </span>
+                           </>
+                        )}
+                    </div>
                 </div>
             </div>
             <div className="flex gap-2">
@@ -570,8 +642,8 @@ export default function CityTalk() {
 
           <div className="flex-1 overflow-y-auto custom-scroll px-6 pt-6 pb-6 bg-zinc-900">
             <div className="mb-8 p-1">
+                {/* ... Post Content ... */}
                 <div className="flex items-center gap-3 mb-3">
-                   {/* ... Timer Ring Logic ... */}
                    {(() => {
                        const { percent, color } = getPostLife(selectedPost.created_at);
                        const radius = 18;
@@ -615,7 +687,6 @@ export default function CityTalk() {
                    </div>
                 </div>
                 <div className="pl-1">
-                    {/* ADDED select-text HERE so users can copy the main post */}
                     <p className="text-[18px] leading-relaxed text-zinc-100 font-medium select-text cursor-text">{selectedPost.content}</p>
                 </div>
             </div>
@@ -627,13 +698,14 @@ export default function CityTalk() {
             </div>
 
             <div className="space-y-6">
-              {replies.length === 0 ? (
+              {replies.length === 0 && !remoteTyping ? (
                 <div className="flex flex-col items-center justify-center py-12 opacity-60">
                    <MoreHorizontal size={32} className="text-zinc-600 mb-3" />
                    <p className="text-[13px] text-zinc-500 font-medium">No replies yet. Be the first!</p>
                 </div>
               ) : (
-                replies.map((reply) => {
+                <>
+                {replies.map((reply) => {
                   const isMe = reply.device_id === deviceId;
                   return (
                     <div key={reply.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
@@ -643,7 +715,6 @@ export default function CityTalk() {
                              </div>
                         )}
                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                             {/* ADDED select-text HERE so users can copy replies */}
                              <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed font-medium shadow-md select-text cursor-text ${
                                  isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'
                              }`}>
@@ -653,7 +724,21 @@ export default function CityTalk() {
                         </div>
                     </div>
                   );
-                })
+                })}
+                {/* --- NICE TYPING INDICATOR --- */}
+                {remoteTyping && (
+                   <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <div className="h-8 w-8 rounded-full bg-zinc-800 border border-white/5 flex items-center justify-center shrink-0">
+                             <MoreHorizontal size={14} className="text-zinc-400 animate-pulse" />
+                        </div>
+                        <div className="px-4 py-3 bg-zinc-800/50 border border-white/5 rounded-2xl rounded-tl-sm flex items-center gap-1.5 w-fit">
+                            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-[bounce_1s_infinite_-0.3s]" />
+                            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-[bounce_1s_infinite_-0.15s]" />
+                            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-[bounce_1s_infinite]" />
+                        </div>
+                   </div>
+                )}
+                </>
               )}
               <div ref={repliesEndRef} />
             </div>
@@ -666,7 +751,7 @@ export default function CityTalk() {
                   placeholder="Type a reply..."
                   rows={1}
                   value={replyInput} 
-                  onChange={(e) => setReplyInput(e.target.value)} 
+                  onChange={(e) => handleTyping(e.target.value)} 
                   onKeyDown={(e) => {
                       if(e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();

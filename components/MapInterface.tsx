@@ -7,18 +7,6 @@ import { Layers, Radio, ChevronRight, Users, Navigation, X, ChevronDown, Chevron
 // --- YOUR TOKEN ---
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
-// --- HELPER: CALCULATE DISTANCE (Haversine Formula) ---
-function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Earth radius in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-  return Math.round(R * c);
-}
-
 // --- MAP CONTROLLER ---
 const MapController = ({ focus }: { focus: [number, number] | null }) => {
   const { current: map } = useMap();
@@ -50,8 +38,6 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
   const mapRef = useRef<MapRef>(null);
   const [visiblePosts, setVisiblePosts] = useState<any[]>([]);
   const [activeUser, setActiveUser] = useState<any>(null);
-  
-  // Responsive State for Radar List
   const [isRadarOpen, setIsRadarOpen] = useState(true);
 
   // Identify "Me" to draw the line from
@@ -66,7 +52,6 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
     padding: { top: 0, bottom: 0, left: 0, right: 0 }
   });
 
-  // Collapse radar automatically on very small screens initially
   useEffect(() => {
     if (window.innerWidth < 640) setIsRadarOpen(false);
   }, []);
@@ -92,13 +77,17 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
     if (!map) return;
     const bounds = map.getBounds();
     if (!bounds) return;
-    const visible = posts.filter(post => bounds.contains([post.lng, post.lat]));
+    
+    // Filter: Must be in view AND not be "me"
+    const visible = posts.filter(post => 
+        bounds.contains([post.lng, post.lat]) && 
+        post.device_id !== userDeviceId
+    );
     setVisiblePosts(visible);
   };
 
   useEffect(() => { updateVisiblePosts(); }, [posts]);
 
-  // Handle clicking a user
   const handleSelectUser = (post: any) => {
     if (post.device_id === userDeviceId) {
         setActiveUser(null);
@@ -132,12 +121,12 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
         terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
         maxZoom={18} 
         minZoom={1.5} 
-        attributionControl={false} // Hides the "Mapbox" text/links
-        logoPosition="bottom-right" // Moves the logo to a corner (we'll hide it with CSS below)
+        attributionControl={false} 
+        logoPosition="bottom-right" 
       >
         <MapController focus={mapFocus} />
 
-        {/* --- THE CONNECTION ARC LAYER --- */}
+        {/* --- CONNECTION ARC --- */}
         {arcData && (
           <Source id="arc-source" type="geojson" data={arcData}>
             <Layer
@@ -205,18 +194,13 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
         })}
       </Map>
 
-      {/* Hide the Mapbox Logo specifically using inline styles */}
       <style jsx global>{`
-        .mapboxgl-ctrl-logo {
-          display: none !important;
-        }
+        .mapboxgl-ctrl-logo { display: none !important; }
       `}</style>
 
-      {/* --- RADAR LIST (RESPONSIVE) --- */}
+      {/* --- RADAR LIST (No changes except excluded 'Me') --- */}
       <div className="absolute top-20 left-4 z-30 pointer-events-none">
         <div className="pointer-events-auto flex flex-col gap-2">
-            
-            {/* Toggle Button (Visible when closed) */}
             {!isRadarOpen && (
                  <button 
                  onClick={() => setIsRadarOpen(true)}
@@ -230,7 +214,6 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
                </button>
             )}
 
-            {/* Expanded List */}
             {isRadarOpen && (
                 <div className="w-64 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden shadow-2xl transition-all animate-in slide-in-from-left-2 fade-in">
                 <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
@@ -255,7 +238,7 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
                     {visiblePosts.length === 0 ? (
                     <div className="px-5 py-8 text-center flex flex-col items-center">
                         <Users size={24} className="text-zinc-700 mb-2 opacity-50" />
-                        <p className="text-[12px] text-zinc-500 font-medium">No signal.</p>
+                        <p className="text-[12px] text-zinc-500 font-medium">No one nearby.</p>
                     </div>
                     ) : (
                     <div className="py-2">
@@ -284,32 +267,6 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
             )}
         </div>
       </div>
-
-      {/* --- DISTANCE BADGE --- */}
-      {activeUser && myPost && (
-         <div className="absolute top-20 right-4 z-40 animate-in fade-in slide-in-from-top-4">
-             <div className="flex items-center gap-3 pr-2 pl-4 py-2 bg-zinc-900/90 backdrop-blur-md border border-cyan-500/30 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.3)]">
-                 <div className="flex flex-col">
-                    <span className="text-[10px] uppercase text-cyan-400 font-bold tracking-widest leading-none mb-0.5">Connected</span>
-                    <div className="flex items-baseline gap-1 text-white leading-none">
-                        <Navigation size={10} className="text-zinc-400" />
-                        <span className="font-bold text-sm">
-                            {getDistance(myPost.lat, myPost.lng, activeUser.lat, activeUser.lng).toLocaleString()} 
-                            <span className="text-xs font-normal text-zinc-500 ml-1">km</span>
-                        </span>
-                    </div>
-                 </div>
-                 <button 
-                    onClick={() => setActiveUser(null)}
-                    className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
-                 >
-                    <X size={14} />
-                 </button>
-             </div>
-         </div>
-      )}
-
-      {/* NOTE: CONTROLS HAVE BEEN REMOVED HERE AS REQUESTED */}
 
       <div className="absolute top-6 left-6 z-[10] pointer-events-none opacity-30 mix-blend-overlay">
          <Layers size={24} className="text-white" />
