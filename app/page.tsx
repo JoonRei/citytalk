@@ -84,6 +84,9 @@ export default function CityTalk() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tick, setTick] = useState(0); 
 
+  // --- NEW STATE FOR INPUT LIFTING ---
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const repliesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -225,6 +228,7 @@ export default function CityTalk() {
     if (!error && data) {
       setPosts(prev => [data[0], ...prev]);
       setInput("");
+      setIsInputFocused(false); // Close the keyboard mode
       setMapFocus([userLocation.lat, userLocation.lng]);
       triggerToast("Message posted!");
     }
@@ -440,7 +444,11 @@ export default function CityTalk() {
       )}
 
       {/* 4. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none">
+      {/* UPDATED: Dynamic Bottom Position based on isInputFocused */}
+      <div 
+        className={`fixed left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none transition-all duration-300 ease-out 
+        ${isInputFocused ? 'bottom-[45vh] md:bottom-0' : 'bottom-0'}`}
+      >
         <div className="w-full max-w-2xl pointer-events-auto">
             <div className="relative bg-zinc-900/95 backdrop-blur-2xl rounded-[2rem] sm:rounded-[2.5rem] p-2 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 focus-within:ring-white/20 transition-all mb-safe">
             <div className="relative flex flex-col">
@@ -451,18 +459,25 @@ export default function CityTalk() {
                     rows={1} 
                     maxLength={200}
                     value={input} 
+                    onFocus={() => setIsInputFocused(true)} // Lift up on focus
+                    onBlur={() => setIsInputFocused(false)} // Drop down on blur
                     onChange={(e) => setInput(e.target.value)} 
                 />
                 
                 <div className="flex justify-between items-center px-2 sm:px-4 pb-2 pt-1">
                     <div className="flex items-center gap-2">
-                    <button onClick={handleFindCity} className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
+                    {/* Prevent Default on MouseDown ensures button works without 'blurring' the input first */}
+                    <button 
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={handleFindCity} 
+                        className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
                         <MapPin size={14} />
                         <span className="hidden xs:inline">{userLocation ? userLocation.city : "City"}</span>
                         <span className="xs:hidden inline">{userLocation ? "Loc" : "City"}</span>
                     </button>
 
                     <button 
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => !isNameLocked && setIsEditingName(!isEditingName)} 
                         className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${isNameLocked ? 'text-zinc-400 cursor-default' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
                         {isNameLocked ? <Lock size={14} /> : <Smile size={14} />}
@@ -471,6 +486,7 @@ export default function CityTalk() {
                     </div>
 
                     <button 
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={handlePost} 
                     disabled={!userLocation || !input || hasActivePost} 
                     className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed">
