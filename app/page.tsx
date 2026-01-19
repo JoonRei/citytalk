@@ -102,7 +102,7 @@ export default function CityTalk() {
   const [tick, setTick] = useState(0); 
 
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [isReplyFocused, setIsReplyFocused] = useState(false); // NEW STATE FOR SIDEBAR INPUT
+  const [isReplyFocused, setIsReplyFocused] = useState(false); 
 
   const [isTyping, setIsTyping] = useState(false);
   const [remoteTyping, setRemoteTyping] = useState(false);
@@ -130,19 +130,18 @@ export default function CityTalk() {
     setTimeout(() => setNotification(null), 6000);
   };
 
-  // --- EXCLUSIVITY HANDLERS ---
   const handleToggleLeaderboard = () => {
     const newState = !showLeaderboard;
     setShowLeaderboard(newState);
     if (newState) {
-        setSelectedPost(null); // Close sidebar if opening leaderboard
+        setSelectedPost(null); 
     }
   };
 
   const handleSelectPost = (post: any) => {
     setSelectedPost(post);
     if (post) {
-        setShowLeaderboard(false); // Close leaderboard if opening sidebar
+        setShowLeaderboard(false); 
         setIsSidebarMinimized(false);
     }
   };
@@ -361,7 +360,6 @@ export default function CityTalk() {
     } else {
       setReplyInput("");
       setRemoteTyping(false); 
-      // Keep focus on input if needed, or let it blur
     }
   };
 
@@ -462,7 +460,7 @@ export default function CityTalk() {
         <MapInterface 
           posts={activePosts} 
           mapFocus={mapFocus} 
-          setSelectedPost={handleSelectPost} // Use new handler
+          setSelectedPost={handleSelectPost} 
           userDeviceId={deviceId}
         />
       </div>
@@ -476,7 +474,7 @@ export default function CityTalk() {
         
         <div className="pointer-events-auto relative flex items-center gap-2">
            <button 
-             onClick={handleToggleLeaderboard} // Use new handler
+             onClick={handleToggleLeaderboard}
              className={`h-10 md:h-11 px-4 md:px-5 rounded-full backdrop-blur-md border shadow-xl flex items-center gap-2 transition-all ${
                showLeaderboard 
                ? 'bg-blue-600 border-blue-500 text-white' 
@@ -487,10 +485,10 @@ export default function CityTalk() {
               <span className="text-[11px] md:text-[13px] font-bold">Top Cities</span>
            </button>
            
+           {/* LOGOUT BUTTON (Updated: removed title) */}
            <button 
              onClick={handleLogout}
              className="h-10 w-10 md:h-11 md:w-11 rounded-full backdrop-blur-md border border-white/10 bg-zinc-900/90 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 shadow-xl flex items-center justify-center transition-all"
-             title="Log Out"
            >
               <LogOut size={16} />
            </button>
@@ -555,7 +553,7 @@ export default function CityTalk() {
             <button 
                onClick={() => { 
                    const targetPost = posts.find(p => p.author_name === notification.author || p.content === notification.msg);
-                   if (targetPost) handleSelectPost(targetPost); // Use new handler
+                   if (targetPost) handleSelectPost(targetPost); 
                    setNotification(null); 
                }}
                className="pointer-events-auto flex items-center gap-4 bg-zinc-900/90 backdrop-blur-xl border border-blue-500/30 p-4 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] max-w-sm w-full hover:bg-zinc-800 transition-all group"
@@ -600,7 +598,6 @@ export default function CityTalk() {
                         onClick={handleFindCity} 
                         className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
                         <MapPin size={14} />
-                        {/* CHANGED: FULL NAME WITH TRUNCATION */}
                         <span className="truncate max-w-[100px] sm:max-w-[150px]">
                             {userLocation ? userLocation.city : "City"}
                         </span>
@@ -797,7 +794,6 @@ export default function CityTalk() {
           </div>
 
           {/* SIDEBAR FOOTER (INPUT) */}
-          {/* UPDATED: Added PB transition for focus state */}
           <div className={`flex-none p-4 sm:p-6 bg-zinc-900 border-t border-white/5 transition-all duration-300 ${isReplyFocused ? 'pb-[35vh] md:pb-6' : 'pb-safe'}`}>
             <div className="relative flex items-center gap-2 bg-zinc-800 rounded-[1.5rem] p-1.5 border border-white/5 focus-within:ring-2 focus-within:ring-blue-600/30 transition-all mb-4">
                 <textarea 
@@ -805,8 +801,8 @@ export default function CityTalk() {
                   placeholder="Type a reply..."
                   rows={1}
                   value={replyInput} 
-                  onFocus={() => setIsReplyFocused(true)} // Set focus state
-                  onBlur={() => setIsReplyFocused(false)} // Clear focus state
+                  onFocus={() => setIsReplyFocused(true)} 
+                  onBlur={() => setIsReplyFocused(false)} 
                   onChange={(e) => handleTyping(e.target.value)} 
                   onKeyDown={(e) => {
                       if(e.key === 'Enter' && !e.shiftKey) {
@@ -816,7 +812,7 @@ export default function CityTalk() {
                   }}
                 />
                 <button 
-                    onMouseDown={(e) => e.preventDefault()} // Prevent blur so click registers
+                    onMouseDown={(e) => e.preventDefault()} 
                     onClick={handleReply} 
                     disabled={!replyInput.trim()}
                     className="h-10 w-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500 transition-all mr-0.5">
