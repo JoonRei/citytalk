@@ -23,15 +23,73 @@ const POST_TTL = 24 * 60 * 60 * 1000;
 const SESSION_DURATION = 12 * 60 * 60 * 1000; 
 
 // --- UTILS ---
-const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
-const scrubSignal = (text: string) => {
+
+const BANNED_WORDS: string[] = [
+  // English
+  'fuck','fck','fvck','shit','sh1t','ass','asshole','bitch','btch',
+  'damn','dumb','idiot','moron','retard','jerk','slut','whore',
+  'bullshit','bs','stfu','shutup','motherfucker','mf',
+
+  // Filipino (full)
+  'puta','putangina','putang ina','pukingina',
+  'gago','gaga',
+  'bobo','tanga','ulol',
+  'tarantado','tarantada',
+  'bwisit','leche','lintik','punyeta',
+  'hayop','baboy',
+  'walanghiya','walang hiya',
+  'siraulo','sira ulo',
+  'inutil','demonyo','animal',
+
+  // Filipino shortcut / trend spellings
+  'pota','ptngina','ptangina','potangina',
+  'p*tangina','p*tngina','putaena','putaena mo',
+  'pu7a','p*ta','pt',
+  'pknina','pkingina',
+
+  'g@go','g4go','g@g0',
+  'b0b0','b*b*',
+  't@nga','t4nga','tng',
+  'ul0l', 'yawa', 'piste',
+  'peste', 'ywa',
+
+  'bw1sit','bwset',
+  'l3che',
+  'h@yop','hay0p',
+  'l1ntik',
+  'puny3ta',
+
+  // Common phrases
+  'gago ka','bobo ka','tanga mo','ulol ka',
+  'hayop ka','putangina mo','punyeta ka'
+];
+
+// Normalize text to defeat bypass tricks
+const normalize = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[@0-9]/g, '')       // remove leetspeak numbers
+    .replace(/[^a-z\s]/g, '')    // remove symbols
+    .replace(/(.)\1+/g, '$1')    // collapse repeated letters
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const scrubSignal = (text: string) => {
   let cleaned = text;
+  const normalizedText = normalize(text);
+
   BANNED_WORDS.forEach(word => {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    cleaned = cleaned.replace(regex, '*'.repeat(word.length));
+    const normalizedWord = normalize(word);
+
+    if (normalizedText.includes(normalizedWord)) {
+      const regex = new RegExp(word.split('').join('\\s*'), 'gi');
+      cleaned = cleaned.replace(regex, '*'.repeat(word.length));
+    }
   });
+
   return cleaned;
 };
+
 
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; 
