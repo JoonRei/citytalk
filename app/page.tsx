@@ -346,6 +346,12 @@ export default function CityTalk() {
 
   const handleReply = async () => {
     if (!replyInput.trim() || !selectedPost) return;
+    
+    // UPDATED: Manually blur active element to force keyboard close
+    if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
+
     const cleanReply = scrubSignal(replyInput); 
     const cleanName = talkerName || `Guest-${Math.floor(100 + Math.random() * 899)}`;
     const { error } = await supabase.from('replies').insert([{
@@ -359,7 +365,8 @@ export default function CityTalk() {
         triggerToast("Failed to reply.");
     } else {
       setReplyInput("");
-      setRemoteTyping(false); 
+      setRemoteTyping(false);
+      setIsReplyFocused(false); // UPDATED: Force the UI to drop down
     }
   };
 
@@ -485,7 +492,6 @@ export default function CityTalk() {
               <span className="text-[11px] md:text-[13px] font-bold">Top Cities</span>
            </button>
            
-           {/* LOGOUT BUTTON (Updated: removed title) */}
            <button 
              onClick={handleLogout}
              className="h-10 w-10 md:h-11 md:w-11 rounded-full backdrop-blur-md border border-white/10 bg-zinc-900/90 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 shadow-xl flex items-center justify-center transition-all"
@@ -811,8 +817,8 @@ export default function CityTalk() {
                       }
                   }}
                 />
+                {/* UPDATED: Removed onMouseDown preventDefault so click blurs input */}
                 <button 
-                    onMouseDown={(e) => e.preventDefault()} 
                     onClick={handleReply} 
                     disabled={!replyInput.trim()}
                     className="h-10 w-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500 transition-all mr-0.5">
