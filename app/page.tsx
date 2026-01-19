@@ -19,6 +19,7 @@ const MapInterface = dynamic(() => import('../components/MapInterface'), {
 
 // --- CONSTANTS ---
 const POST_TTL = 24 * 60 * 60 * 1000; 
+const SESSION_DURATION = 12 * 60 * 60 * 1000; // 12 Hours Session Timeout
 
 // --- UTILS ---
 const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
@@ -84,7 +85,6 @@ export default function CityTalk() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tick, setTick] = useState(0); 
 
-  // --- NEW STATE FOR INPUT LIFTING ---
   const [isInputFocused, setIsInputFocused] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -117,9 +117,18 @@ export default function CityTalk() {
   }, [activePosts]);
 
   useEffect(() => {
+    // 1. Load Device ID
     let storedId = localStorage.getItem('citytalk_device_token');
     let storedName = localStorage.getItem('citytalk_signal_id');
     let lastChange = localStorage.getItem('citytalk_name_date');
+
+    // 2. Load Session (New Logic)
+    let sessionExpiry = localStorage.getItem('citytalk_session_expiry');
+    if (sessionExpiry && parseInt(sessionExpiry) > Date.now()) {
+        setIsAuthorized(true); // Skip welcome screen
+        // Refresh session
+        localStorage.setItem('citytalk_session_expiry', (Date.now() + SESSION_DURATION).toString());
+    }
 
     if (!storedId) {
       storedId = `user_${Math.random().toString(36).substr(2, 9)}`;
@@ -228,7 +237,7 @@ export default function CityTalk() {
     if (!error && data) {
       setPosts(prev => [data[0], ...prev]);
       setInput("");
-      setIsInputFocused(false); // Close the keyboard mode
+      setIsInputFocused(false); 
       setMapFocus([userLocation.lat, userLocation.lng]);
       triggerToast("Message posted!");
     }
@@ -273,10 +282,26 @@ export default function CityTalk() {
     }
   };
 
+  // --- START TALKING (WITH SESSION SAVE) ---
+  const handleStartTalking = () => {
+    setIsInitializing(true); 
+    let step = 0; 
+    const interval = setInterval(() => { 
+        if (step < 3) { step++; setLoadingStep(step); } 
+        else { 
+            clearInterval(interval); 
+            setIsInitializing(false); 
+            setIsAuthorized(true); 
+            // SAVE SESSION HERE
+            localStorage.setItem('citytalk_session_expiry', (Date.now() + SESSION_DURATION).toString());
+        } 
+    }, 1400); 
+  };
+
   if (isInitializing) {
     const currentStep = loadingSequence[loadingStep];
     return (
-      <main className="fixed inset-0 bg-[#020202] flex flex-col items-center justify-center z-[200] overflow-hidden">
+      <main className="fixed inset-0 bg-[#020202] flex flex-col items-center justify-center z-[200] overflow-hidden select-none">
         <div className={`absolute h-[600px] w-[600px] rounded-full ${currentStep.color} opacity-10 blur-[150px] transition-all duration-1000 ease-in-out`} />
         <div className="relative flex flex-col items-center">
             <div className="relative h-48 w-48 flex items-center justify-center mb-16">
@@ -305,7 +330,7 @@ export default function CityTalk() {
 
   if (!isAuthorized) {
     return (
-      <main className="fixed inset-0 bg-[#050505] flex items-center justify-center p-6 z-[100]">
+      <main className="fixed inset-0 bg-[#050505] flex items-center justify-center p-6 z-[100] select-none">
         <div className="w-full max-w-[340px] flex flex-col">
           <div className="mb-10">
             <h1 className="text-3xl font-bold text-white tracking-tighter">citytalk</h1>
@@ -337,14 +362,7 @@ export default function CityTalk() {
           </div>
           <button 
             disabled={!agreements.location || !agreements.safety || !agreements.data} 
-            onClick={() => { 
-              setIsInitializing(true); 
-              let step = 0; 
-              const interval = setInterval(() => { 
-                if (step < 3) { step++; setLoadingStep(step); } 
-                else { clearInterval(interval); setIsInitializing(false); setIsAuthorized(true); } 
-              }, 1400); 
-            }} 
+            onClick={handleStartTalking} 
             className="w-full bg-white text-black py-5 rounded-[2rem] font-black text-sm lowercase hover:bg-zinc-200 transition-all disabled:opacity-10"
           >
             start talking
@@ -355,8 +373,9 @@ export default function CityTalk() {
   }
 
   // --- MAIN APPLICATION ---
+  // Added 'select-none' here to disable copying generally
   return (
-    <main className="h-[100dvh] w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30">
+    <main className="h-[100dvh] w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30 select-none">
       
       {/* 1. Map Layer */}
       <div className="absolute inset-0 z-0 opacity-100">
@@ -444,7 +463,6 @@ export default function CityTalk() {
       )}
 
       {/* 4. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
-      {/* UPDATED: Dynamic Bottom Position based on isInputFocused */}
       <div 
         className={`fixed left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none transition-all duration-300 ease-out 
         ${isInputFocused ? 'bottom-[45vh] md:bottom-0' : 'bottom-0'}`}
@@ -454,19 +472,18 @@ export default function CityTalk() {
             <div className="relative flex flex-col">
                 <textarea 
                     disabled={hasActivePost} 
-                    className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50" 
+                    className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50 select-text" 
                     placeholder={hasActivePost ? "Message active..." : "Say something..."} 
                     rows={1} 
                     maxLength={200}
                     value={input} 
-                    onFocus={() => setIsInputFocused(true)} // Lift up on focus
-                    onBlur={() => setIsInputFocused(false)} // Drop down on blur
+                    onFocus={() => setIsInputFocused(true)} 
+                    onBlur={() => setIsInputFocused(false)} 
                     onChange={(e) => setInput(e.target.value)} 
                 />
                 
                 <div className="flex justify-between items-center px-2 sm:px-4 pb-2 pt-1">
                     <div className="flex items-center gap-2">
-                    {/* Prevent Default on MouseDown ensures button works without 'blurring' the input first */}
                     <button 
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={handleFindCity} 
@@ -501,7 +518,7 @@ export default function CityTalk() {
                 <div className="bg-zinc-800 border border-white/20 rounded-xl p-2 shadow-2xl flex items-center gap-2">
                     <input 
                         autoFocus 
-                        className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-32 sm:w-36 px-3 placeholder:text-zinc-500" 
+                        className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-32 sm:w-36 px-3 placeholder:text-zinc-500 select-text" 
                         placeholder="Name..." 
                         value={talkerName} 
                         onChange={(e) => setTalkerName(e.target.value.substring(0, 15))} 
@@ -598,7 +615,8 @@ export default function CityTalk() {
                    </div>
                 </div>
                 <div className="pl-1">
-                    <p className="text-[18px] leading-relaxed text-zinc-100 font-medium">{selectedPost.content}</p>
+                    {/* ADDED select-text HERE so users can copy the main post */}
+                    <p className="text-[18px] leading-relaxed text-zinc-100 font-medium select-text cursor-text">{selectedPost.content}</p>
                 </div>
             </div>
 
@@ -625,7 +643,8 @@ export default function CityTalk() {
                              </div>
                         )}
                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                             <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed font-medium shadow-md ${
+                             {/* ADDED select-text HERE so users can copy replies */}
+                             <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed font-medium shadow-md select-text cursor-text ${
                                  isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'
                              }`}>
                                 {reply.content}
@@ -643,7 +662,7 @@ export default function CityTalk() {
           <div className="flex-none p-4 sm:p-6 bg-zinc-900 border-t border-white/5 pb-safe">
             <div className="relative flex items-center gap-2 bg-zinc-800 rounded-[1.5rem] p-1.5 border border-white/5 focus-within:ring-2 focus-within:ring-blue-600/30 transition-all mb-4">
                 <textarea 
-                  className="flex-1 bg-transparent border-0 py-3 pl-4 text-[14px] font-medium text-white placeholder:text-zinc-500 outline-none resize-none max-h-32 custom-scroll" 
+                  className="flex-1 bg-transparent border-0 py-3 pl-4 text-[14px] font-medium text-white placeholder:text-zinc-500 outline-none resize-none max-h-32 custom-scroll select-text" 
                   placeholder="Type a reply..."
                   rows={1}
                   value={replyInput} 
