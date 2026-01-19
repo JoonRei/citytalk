@@ -6,7 +6,7 @@ import {
   MapPin, Users, Lock,
   Minimize2, MessageCircle, MoreHorizontal,
   Trash2, Smile, Hash, Trophy, TrendingUp, ChevronRight,
-  Clock, Bell, Navigation
+  Clock, Bell, Navigation, LogOut, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getDetailedLocation } from '../lib/location';
@@ -96,6 +96,7 @@ export default function CityTalk() {
   const [toast, setToast] = useState<string | null>(null);
   
   const [notification, setNotification] = useState<{author: string, msg: string} | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tick, setTick] = useState(0); 
@@ -112,12 +113,9 @@ export default function CityTalk() {
 
   useEffect(() => { postsRef.current = posts; }, [posts]);
 
-  // --- VIBRATION HELPER ---
+  // --- HELPER FUNCTIONS ---
   const triggerVibration = () => {
-    // Only works on mobile/supported devices
-    if (navigator.vibrate) {
-        navigator.vibrate(200); // Vibrate for 200ms
-    }
+    if (navigator.vibrate) navigator.vibrate(200);
   };
 
   const triggerToast = (msg: string) => {
@@ -127,8 +125,10 @@ export default function CityTalk() {
 
   const triggerNotification = (author: string, msg: string) => {
     setNotification({ author, msg });
-    triggerVibration(); // Use vibration instead of sound
-    setTimeout(() => setNotification(null), 5000);
+    triggerVibration(); 
+    // We do NOT auto-hide quickly if we want the user to see the blur effect
+    // But for usability, let's keep a 6s timer or let them click it
+    setTimeout(() => setNotification(null), 6000);
   };
 
   const activePosts = useMemo(() => {
@@ -210,24 +210,18 @@ export default function CityTalk() {
         if (selectedPost?.id === payload.old.id) setSelectedPost(null);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'replies' }, (payload) => {
-        // 1. Handle Chat Window Updates
         if (selectedPost && payload.new.post_id === selectedPost.id) {
            setReplies(prev => [...prev, payload.new]);
            if (payload.new.device_id !== deviceId) {
                 setRemoteTyping(false);
-                // Trigger small haptic feedback if chat is open
                 triggerVibration();
            }
         }
-
-        // 2. Handle GLOBAL Notifications (Even if panel is closed)
         const newReply = payload.new;
         if (newReply.device_id !== deviceId) {
              const parentPost = postsRef.current.find(p => p.id === newReply.post_id);
-             
              if (parentPost && parentPost.device_id === deviceId) {
                  const isViewingThisPost = selectedPost && selectedPost.id === newReply.post_id && !isSidebarMinimized;
-                 
                  if (!isViewingThisPost) {
                      triggerNotification(newReply.author_name, newReply.content);
                  }
@@ -270,7 +264,6 @@ export default function CityTalk() {
   const handleTyping = (text: string) => {
     setReplyInput(text);
     if (!selectedPost) return;
-    
     channelRef.current?.send({
         type: 'broadcast',
         event: 'typing',
@@ -323,10 +316,16 @@ export default function CityTalk() {
     triggerToast("Nickname saved");
   };
 
-  const handleDeletePost = async () => {
+  const handleLogout = () => {
+      localStorage.clear();
+      window.location.reload();
+  };
+
+  const confirmDeletePost = async () => {
     if (!selectedPost) return;
     await supabase.from('posts').delete().eq('id', selectedPost.id).eq('device_id', deviceId);
     setSelectedPost(null);
+    setShowDeleteConfirm(false);
     triggerToast("Post deleted");
   };
 
@@ -334,7 +333,6 @@ export default function CityTalk() {
     if (!replyInput.trim() || !selectedPost) return;
     const cleanReply = scrubSignal(replyInput); 
     const cleanName = talkerName || `Guest-${Math.floor(100 + Math.random() * 899)}`;
-    
     const { error } = await supabase.from('replies').insert([{
       post_id: selectedPost.id, 
       content: cleanReply, 
@@ -343,7 +341,6 @@ export default function CityTalk() {
     }]);
 
     if (error) {
-        console.error("Reply Error:", error);
         triggerToast("Failed to reply.");
     } else {
       setReplyInput("");
@@ -460,7 +457,7 @@ export default function CityTalk() {
            <span className="text-[11px] md:text-[13px] font-bold text-white">{activePosts.length} online</span>
         </div>
         
-        <div className="pointer-events-auto relative">
+        <div className="pointer-events-auto relative flex items-center gap-2">
            <button 
              onClick={() => setShowLeaderboard(!showLeaderboard)}
              className={`h-10 md:h-11 px-4 md:px-5 rounded-full backdrop-blur-md border shadow-xl flex items-center gap-2 transition-all ${
@@ -472,6 +469,16 @@ export default function CityTalk() {
               <Trophy size={14} className="md:w-4 md:h-4" />
               <span className="text-[11px] md:text-[13px] font-bold">Top Cities</span>
            </button>
+           
+           {/* LOGOUT BUTTON */}
+           <button 
+             onClick={handleLogout}
+             className="h-10 w-10 md:h-11 md:w-11 rounded-full backdrop-blur-md border border-white/10 bg-zinc-900/90 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 shadow-xl flex items-center justify-center transition-all"
+             title="Log Out"
+           >
+              <LogOut size={16} />
+           </button>
+
            {/* Leaderboard Popup */}
            {showLeaderboard && (
              <div className="absolute top-full right-0 mt-3 w-64 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-2 fade-in z-50">
@@ -524,9 +531,12 @@ export default function CityTalk() {
         </div>
       )}
 
-      {/* 4. NEW MESSAGE NOTIFICATION (Interactive) */}
-      {/* ENSURED TOP PLACEMENT & HIGH Z-INDEX */}
+      {/* 4. NEW MESSAGE NOTIFICATION (Interactive + Blur) */}
       {notification && (
+        <>
+        {/* BLUR LAYER */}
+        <div className="fixed inset-0 z-[165] bg-black/30 backdrop-blur-md animate-in fade-in duration-500" />
+        
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[170] animate-in fade-in zoom-in slide-in-from-top-4 w-full px-4 flex justify-center pointer-events-none">
             <button 
                onClick={() => { 
@@ -547,9 +557,10 @@ export default function CityTalk() {
                 </div>
             </button>
         </div>
+        </>
       )}
 
-      {/* 5. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
+      {/* 5. MAIN INPUT */}
       <div 
         className={`fixed left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none transition-all duration-300 ease-out 
         ${isInputFocused ? 'bottom-[45vh] md:bottom-0' : 'bottom-0'}`}
@@ -559,7 +570,8 @@ export default function CityTalk() {
             <div className="relative flex flex-col">
                 <textarea 
                     disabled={hasActivePost} 
-                    className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50 select-text" 
+                    // ADDED: [&::-webkit-scrollbar]:hidden to hide scrollbar
+                    className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50 select-text [&::-webkit-scrollbar]:hidden" 
                     placeholder={hasActivePost ? "Message active..." : "Say something..."} 
                     rows={1} 
                     maxLength={200}
@@ -642,7 +654,6 @@ export default function CityTalk() {
                 </div>
                 <div>
                     <h3 className="text-[15px] font-bold text-white">Conversation</h3>
-                    {/* --- UPDATED: ADDED DISTANCE HERE --- */}
                     <div className="flex items-center gap-2 text-[12px] text-zinc-400 font-medium">
                         <span>Near {selectedPost.city}</span>
                         {userLocation && (
@@ -795,13 +806,44 @@ export default function CityTalk() {
             </div>
             {selectedPost.device_id === deviceId && (
                 <button 
-                  onClick={handleDeletePost} 
+                  onClick={() => setShowDeleteConfirm(true)} 
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all text-[13px] font-bold">
                     <Trash2 size={16} /> Delete Post
                 </button>
             )}
           </div>
         </div>
+
+        {/* DELETE CONFIRMATION POPUP */}
+        {showDeleteConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-zinc-900 border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+                    <div className="flex flex-col items-center text-center">
+                        <div className="h-16 w-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
+                            <AlertTriangle size={32} className="text-red-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2">Delete Conversation?</h3>
+                        <p className="text-zinc-400 text-sm mb-6 leading-relaxed">
+                            This will permanently remove this post and all replies for everyone. This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3 w-full">
+                            <button 
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="flex-1 py-3 rounded-xl bg-zinc-800 text-white font-bold text-sm hover:bg-zinc-700 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmDeletePost}
+                                className="flex-1 py-3 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-500 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
         </>
       )}
     </main>
