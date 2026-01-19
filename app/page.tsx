@@ -33,7 +33,7 @@ const scrubSignal = (text: string) => {
   return cleaned;
 };
 
-// --- ADDED DISTANCE HELPER HERE ---
+// --- DISTANCE HELPER ---
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -118,6 +118,7 @@ export default function CityTalk() {
 
   const triggerNotification = (author: string, msg: string) => {
     setNotification({ author, msg });
+    // Play the sound when notification triggers
     audioRef.current?.play().catch(() => {});
     setTimeout(() => setNotification(null), 5000);
   };
@@ -170,7 +171,10 @@ export default function CityTalk() {
       }
     }
     setDeviceId(storedId);
-    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    
+    // 🔊 PREMIUM SOUND SETUP
+    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'); 
+    audioRef.current.volume = 0.5; 
 
     const timer = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(timer);
@@ -205,6 +209,12 @@ export default function CityTalk() {
         if (selectedPost && payload.new.post_id === selectedPost.id) {
            setReplies(prev => [...prev, payload.new]);
            if (payload.new.device_id !== deviceId) setRemoteTyping(false);
+           
+           // If chat is OPEN and someone else replies, play a soft sound too
+           if (payload.new.device_id !== deviceId) {
+             // --- FIX: Cast to HTMLAudioElement here ---
+             (audioRef.current?.cloneNode(true) as HTMLAudioElement)?.play().catch(() => {});
+           }
         }
 
         if (selectedPost && selectedPost.device_id === deviceId && payload.new.device_id !== deviceId) {
