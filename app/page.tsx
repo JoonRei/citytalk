@@ -18,7 +18,7 @@ const MapInterface = dynamic(() => import('../components/MapInterface'), {
 });
 
 // --- CONSTANTS ---
-const POST_TTL = 24 * 60 * 60 * 1000; // 24 Hours in milliseconds
+const POST_TTL = 24 * 60 * 60 * 1000; 
 
 // --- UTILS ---
 const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
@@ -53,16 +53,15 @@ const getPostLife = (dateString: string) => {
 
     const percent = (remaining / POST_TTL) * 100;
     
-    let color = 'text-emerald-500'; // Fresh
-    if (percent < 50) color = 'text-yellow-500'; // Aging
-    if (percent < 20) color = 'text-red-500'; // Critical
+    let color = 'text-emerald-500'; 
+    if (percent < 50) color = 'text-yellow-500'; 
+    if (percent < 20) color = 'text-red-500'; 
 
     return { percent, color, status: Math.floor(remaining / (1000 * 60 * 60)) + 'h left' };
 };
 
 // --- MAIN COMPONENT ---
 export default function CityTalk() {
-  // --- STATE ---
   const [deviceId, setDeviceId] = useState<string>("");
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [agreements, setAgreements] = useState({ location: false, safety: false, data: false });
@@ -85,8 +84,6 @@ export default function CityTalk() {
   const [isNameLocked, setIsNameLocked] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  
-  // Ticker to update ephemeral rings every minute
   const [tick, setTick] = useState(0); 
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -97,7 +94,6 @@ export default function CityTalk() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // --- FILTERED POSTS (Remove Expired) ---
   const activePosts = useMemo(() => {
     return posts.filter(p => {
         const created = new Date(p.created_at).getTime();
@@ -105,24 +101,20 @@ export default function CityTalk() {
     });
   }, [posts, tick]);
 
-  // --- DERIVED STATE (LEADERBOARD) ---
   const trendingCities = useMemo(() => {
     const cityCounts: Record<string, { count: number, lat: number, lng: number }> = {};
-    
     activePosts.forEach(post => {
         if (!cityCounts[post.city]) {
             cityCounts[post.city] = { count: 0, lat: post.lat, lng: post.lng };
         }
         cityCounts[post.city].count += 1;
     });
-
     return Object.entries(cityCounts)
         .sort(([, a], [, b]) => b.count - a.count)
-        .slice(0, 5) // Top 5
+        .slice(0, 5) 
         .map(([city, data]) => ({ city, ...data }));
   }, [activePosts]);
 
-  // --- INITIALIZATION ---
   useEffect(() => {
     let storedId = localStorage.getItem('citytalk_device_token');
     let storedName = localStorage.getItem('citytalk_signal_id');
@@ -146,14 +138,12 @@ export default function CityTalk() {
     setDeviceId(storedId);
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
 
-    // Start Global Ticker (updates visuals every minute)
     const timer = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(timer);
   }, []);
 
   const hasActivePost = useMemo(() => activePosts.some(p => p.device_id === deviceId), [activePosts, deviceId]);
 
-  // Loading Sequence
   const loadingSequence = [
     { msg: "finding neighborhood...", icon: <MapPin size={32}/>, color: "bg-blue-500", shadow: "shadow-blue-500/50" },
     { msg: "looking for people...", icon: <Users size={32}/>, color: "bg-green-500", shadow: "shadow-green-500/50" },
@@ -161,11 +151,9 @@ export default function CityTalk() {
     { msg: "joining city...", icon: <Globe size={32}/>, color: "bg-indigo-500", shadow: "shadow-indigo-500/50" }
   ];
 
-  // --- DATA SYNC ---
   useEffect(() => {
     if (!isAuthorized) return;
     const fetchPosts = async () => {
-      // Get more than needed, we filter client side for the TTL
       const { data } = await supabase.from('posts').select(`*`).order('created_at', { ascending: false }).limit(200);
       if (data) setPosts(data);
     };
@@ -173,7 +161,6 @@ export default function CityTalk() {
     
     const channel = supabase.channel('city-signals-room')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
-        // Prevent duplicates if local state was already updated by handlePost
         setPosts(prev => prev.some(p => p.id === payload.new.id) ? prev : [payload.new, ...prev]);
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, (payload) => {
@@ -207,12 +194,10 @@ export default function CityTalk() {
     }
   }, [selectedPost]);
 
-  // Scroll to bottom when replies update
   useEffect(() => {
     repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [replies]);
 
-  // --- HANDLERS ---
   const handleFindCity = async () => {
     const loc = await getDetailedLocation();
     if (loc && loc.lat && loc.lng) {
@@ -233,13 +218,11 @@ export default function CityTalk() {
     const cleanContent = scrubSignal(input); 
     const cleanName = talkerName || `Guest-${Math.floor(100 + Math.random() * 899)}`;
     
-    // UPDATED: Use .select() to get data back immediately
     const { data, error } = await supabase.from('posts').insert([{
       content: cleanContent, city: userLocation.city, lat: userLocation.lat, lng: userLocation.lng, author_name: cleanName, device_id: deviceId,
     }]).select();
 
     if (!error && data) {
-      // UPDATED: Optimistic/Immediate update
       setPosts(prev => [data[0], ...prev]);
       setInput("");
       setMapFocus([userLocation.lat, userLocation.lng]);
@@ -278,11 +261,11 @@ export default function CityTalk() {
     }
   };
 
-  // --- LOADING UI ---
   if (isInitializing) {
     const currentStep = loadingSequence[loadingStep];
     return (
       <main className="fixed inset-0 bg-[#020202] flex flex-col items-center justify-center z-[200] overflow-hidden">
+        {/* Loading UI is already centered and responsive */}
         <div className={`absolute h-[600px] w-[600px] rounded-full ${currentStep.color} opacity-10 blur-[150px] transition-all duration-1000 ease-in-out`} />
         <div className="relative flex flex-col items-center">
             <div className="relative h-48 w-48 flex items-center justify-center mb-16">
@@ -309,7 +292,6 @@ export default function CityTalk() {
     );
   }
 
-  // --- WELCOME UI ---
   if (!isAuthorized) {
     return (
       <main className="fixed inset-0 bg-[#050505] flex items-center justify-center p-6 z-[100]">
@@ -365,7 +347,7 @@ export default function CityTalk() {
   return (
     <main className="h-screen w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30">
       
-      {/* 1. Map Layer (Now uses activePosts to hide expired ones) */}
+      {/* 1. Map Layer */}
       <div className="absolute inset-0 z-0 opacity-100">
         <MapInterface 
           posts={activePosts} 
@@ -375,32 +357,32 @@ export default function CityTalk() {
         />
       </div>
 
-      {/* 2. Top HUD (Left: Status, Right: Leaderboard) */}
-      <div className="absolute top-0 left-0 right-0 z-30 p-6 pointer-events-none flex justify-between items-start">
+      {/* 2. Top HUD (Responsive Padding) */}
+      <div className="absolute top-0 left-0 right-0 z-30 p-4 md:p-6 pointer-events-none flex justify-between items-start">
         
         {/* Left: Active Users */}
-        <div className="bg-zinc-900/90 backdrop-blur-md px-5 py-2.5 rounded-full pointer-events-auto border border-white/10 flex items-center gap-3 shadow-xl hover:bg-black transition-all">
+        <div className="bg-zinc-900/90 backdrop-blur-md px-4 py-2 md:px-5 md:py-2.5 rounded-full pointer-events-auto border border-white/10 flex items-center gap-3 shadow-xl hover:bg-black transition-all">
            <div className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-           <span className="text-[13px] font-bold text-white">{activePosts.length} online</span>
+           <span className="text-[11px] md:text-[13px] font-bold text-white">{activePosts.length} online</span>
         </div>
 
         {/* Right: Trending Button */}
         <div className="pointer-events-auto relative">
            <button 
              onClick={() => setShowLeaderboard(!showLeaderboard)}
-             className={`h-11 px-5 rounded-full backdrop-blur-md border shadow-xl flex items-center gap-2 transition-all ${
+             className={`h-10 md:h-11 px-4 md:px-5 rounded-full backdrop-blur-md border shadow-xl flex items-center gap-2 transition-all ${
                showLeaderboard 
                ? 'bg-blue-600 border-blue-500 text-white' 
                : 'bg-zinc-900/90 border-white/10 text-zinc-300 hover:text-white hover:bg-black'
              }`}
            >
-              <Trophy size={16} />
-              <span className="text-[13px] font-bold">Top Cities</span>
+              <Trophy size={14} className="md:w-4 md:h-4" />
+              <span className="text-[11px] md:text-[13px] font-bold">Top Cities</span>
            </button>
 
-           {/* Leaderboard Popup */}
+           {/* Leaderboard Popup (Right Aligned) */}
            {showLeaderboard && (
-             <div className="absolute top-full right-0 mt-3 w-64 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-2 fade-in">
+             <div className="absolute top-full right-0 mt-3 w-64 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-2 fade-in z-50">
                 <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2 bg-white/5">
                    <TrendingUp size={16} className="text-blue-400" />
                    <span className="text-[12px] font-bold uppercase tracking-widest text-zinc-400">Trending</span>
@@ -442,7 +424,7 @@ export default function CityTalk() {
 
       {/* 3. Toast Notifications */}
       {toast && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[150] animate-in fade-in slide-in-from-top-4">
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[150] animate-in fade-in slide-in-from-top-4 w-full px-4 flex justify-center">
           <div className="px-6 py-3 bg-zinc-800 border border-white/20 rounded-full shadow-2xl flex items-center gap-3">
             <Check size={16} className="text-green-400" />
             <span className="text-[13px] font-bold text-white">{toast}</span>
@@ -450,32 +432,34 @@ export default function CityTalk() {
         </div>
       )}
 
-      {/* 4. Main Input */}
+      {/* 4. Main Input (Responsive Layout) */}
       <div className="mt-auto p-4 sm:p-8 relative z-20 w-full max-w-2xl mx-auto">
-        <div className="relative bg-zinc-900/95 backdrop-blur-2xl rounded-[2.5rem] p-2 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 focus-within:ring-white/20 transition-all">
+        <div className="relative bg-zinc-900/95 backdrop-blur-2xl rounded-[2rem] sm:rounded-[2.5rem] p-2 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 focus-within:ring-white/20 transition-all">
           <div className="relative flex flex-col">
               <textarea 
                 disabled={hasActivePost} 
-                className="w-full bg-transparent !border-none !ring-0 !outline-none px-6 py-4 text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50" 
-                placeholder={hasActivePost ? "You already have a message on the map." : "Say something..."} 
+                className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50" 
+                placeholder={hasActivePost ? "Message active..." : "Say something..."} 
                 rows={1} 
                 maxLength={200}
                 value={input} 
                 onChange={(e) => setInput(e.target.value)} 
               />
               
-              <div className="flex justify-between items-center px-4 pb-2 pt-1">
+              <div className="flex justify-between items-center px-2 sm:px-4 pb-2 pt-1">
                 <div className="flex items-center gap-2">
-                  <button onClick={handleFindCity} className={`h-9 px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
+                  <button onClick={handleFindCity} className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
                     <MapPin size={14} />
-                    <span>{userLocation ? userLocation.city : "My City"}</span>
+                    {/* Hide text on very small screens if needed, but flex wrap helps */}
+                    <span className="hidden xs:inline">{userLocation ? userLocation.city : "City"}</span>
+                    <span className="xs:hidden inline">{userLocation ? "Loc" : "City"}</span>
                   </button>
 
                   <button 
                     onClick={() => !isNameLocked && setIsEditingName(!isEditingName)} 
-                    className={`h-9 px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${isNameLocked ? 'text-zinc-400 cursor-default' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
+                    className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${isNameLocked ? 'text-zinc-400 cursor-default' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
                      {isNameLocked ? <Lock size={14} /> : <Smile size={14} />}
-                     <span>{talkerName || "Nickname"}</span>
+                     <span className="hidden xs:inline">{talkerName || "Name"}</span>
                   </button>
                 </div>
 
@@ -490,12 +474,12 @@ export default function CityTalk() {
           
           {/* Edit Name Popup */}
           {isEditingName && !isNameLocked && (
-            <div className="absolute bottom-full left-0 mb-4 ml-8 animate-in slide-in-from-bottom-2 fade-in">
+            <div className="absolute bottom-full left-0 mb-4 ml-8 animate-in slide-in-from-bottom-2 fade-in z-50">
                <div className="bg-zinc-800 border border-white/20 rounded-xl p-2 shadow-2xl flex items-center gap-2">
                    <input 
                      autoFocus 
-                     className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-36 px-3 placeholder:text-zinc-500" 
-                     placeholder="Enter name..." 
+                     className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-32 sm:w-36 px-3 placeholder:text-zinc-500" 
+                     placeholder="Name..." 
                      value={talkerName} 
                      onChange={(e) => setTalkerName(e.target.value.substring(0, 15))} 
                    />
@@ -506,13 +490,13 @@ export default function CityTalk() {
         </div>
       </div>
 
-      {/* 5. SIDEBAR WITH EPHEMERAL TIMERS */}
+      {/* 5. SIDEBAR WITH EPHEMERAL TIMERS (RESPONSIVE) */}
       {selectedPost && (
         <>
         {isSidebarMinimized && (
             <button 
                 onClick={() => setIsSidebarMinimized(false)}
-                className="fixed bottom-36 right-6 z-[60] h-14 w-14 bg-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.5)] border border-white/10 rounded-full flex items-center justify-center animate-in zoom-in hover:scale-110 transition-all group">
+                className="fixed bottom-32 right-4 sm:bottom-36 sm:right-6 z-[60] h-14 w-14 bg-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.5)] border border-white/10 rounded-full flex items-center justify-center animate-in zoom-in hover:scale-110 transition-all group">
                 <MessageCircle size={24} className="text-white" />
                 {replies.length > 0 && (
                     <div className="absolute -top-1 -right-1 h-5 w-5 bg-blue-600 rounded-full flex items-center justify-center text-[11px] font-bold text-white border-2 border-zinc-900">
@@ -522,6 +506,11 @@ export default function CityTalk() {
             </button>
         )}
 
+        {/* SIDEBAR CONTAINER:
+            - w-full on Mobile
+            - sm:w-[440px] on Tablet/Desktop
+            - translate-x logic remains the same
+        */}
         <div className={`fixed inset-y-0 right-0 w-full sm:w-[440px] z-[60] bg-zinc-900/95 backdrop-blur-3xl border-l border-white/10 shadow-2xl flex flex-col transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSidebarMinimized ? 'translate-x-full' : 'translate-x-0'}`}>
           <div className="flex-none px-6 py-5 flex items-center justify-between border-b border-white/5 bg-zinc-900">
             <div className="flex items-center gap-3">
@@ -546,8 +535,7 @@ export default function CityTalk() {
           <div className="flex-1 overflow-y-auto custom-scroll px-6 pt-6 pb-6 bg-zinc-900">
             <div className="mb-8 p-1">
                 <div className="flex items-center gap-3 mb-3">
-                   
-                   {/* --- EPHEMERAL TIMER RING --- */}
+                   {/* ... Timer Ring Logic ... */}
                    {(() => {
                        const { percent, color } = getPostLife(selectedPost.created_at);
                        const radius = 18;
@@ -556,7 +544,6 @@ export default function CityTalk() {
                        
                        return (
                            <div className="relative h-12 w-12 flex items-center justify-center shrink-0">
-                               {/* SVG Timer Ring */}
                                <svg className="absolute inset-0 w-full h-full rotate-[-90deg]">
                                    <circle cx="24" cy="24" r={radius} fill="none" stroke="currentColor" strokeWidth="3" className="text-zinc-800" />
                                    <circle 
@@ -567,7 +554,6 @@ export default function CityTalk() {
                                       className={`${color} transition-all duration-1000 ease-linear`}
                                    />
                                </svg>
-                               {/* Avatar */}
                                <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[12px] font-bold shadow-sm z-10">
                                   {selectedPost.author_name.charAt(0).toUpperCase()}
                                </div>
