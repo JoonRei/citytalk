@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import Map, { Marker, useMap, ViewStateChangeEvent, MapRef, Source, Layer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Locate, Plus, Minus, Layers, Radio, ChevronRight, Users, Navigation, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Layers, Radio, ChevronRight, Users, Navigation, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 // --- YOUR TOKEN ---
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -51,7 +51,7 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
   const [visiblePosts, setVisiblePosts] = useState<any[]>([]);
   const [activeUser, setActiveUser] = useState<any>(null);
   
-  // Responsive State for Radar List (Collapsed by default on mobile if needed, but we'll control via CSS/State)
+  // Responsive State for Radar List
   const [isRadarOpen, setIsRadarOpen] = useState(true);
 
   // Identify "Me" to draw the line from
@@ -130,7 +130,10 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
         projection={{ name: 'globe' } as any}
         fog={{ "range": [0.8, 8], "color": "#18181b", "horizon-blend": 0.05, "high-color": "#000000", "space-color": "#000000", "star-intensity": 0.4 }}
         terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
-        maxZoom={18} minZoom={1.5} logoPosition="bottom-left" attributionControl={false}
+        maxZoom={18} 
+        minZoom={1.5} 
+        attributionControl={false} // Hides the "Mapbox" text/links
+        logoPosition="bottom-right" // Moves the logo to a corner (we'll hide it with CSS below)
       >
         <MapController focus={mapFocus} />
 
@@ -201,6 +204,13 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
           );
         })}
       </Map>
+
+      {/* Hide the Mapbox Logo specifically using inline styles */}
+      <style jsx global>{`
+        .mapboxgl-ctrl-logo {
+          display: none !important;
+        }
+      `}</style>
 
       {/* --- RADAR LIST (RESPONSIVE) --- */}
       <div className="absolute top-20 left-4 z-30 pointer-events-none">
@@ -299,30 +309,7 @@ export default function MapInterface({ posts, mapFocus, setSelectedPost, userDev
          </div>
       )}
 
-      {/* CONTROLS (Moved UP for Mobile) */}
-      <div className="absolute bottom-32 md:bottom-8 right-4 md:right-8 z-[20] flex flex-col gap-3 transition-all">
-        <button 
-          onClick={() => mapFocus && setViewState(prev => ({...prev, latitude: mapFocus[0], longitude: mapFocus[1], zoom: 14, pitch: 45 }))}
-          className="h-12 w-12 bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-2xl flex items-center justify-center text-white/70 hover:text-white hover:bg-zinc-800 transition-all shadow-xl active:scale-95 group"
-        >
-          <Locate size={20} className={mapFocus ? "text-blue-500" : ""} />
-        </button>
-
-        <div className="flex flex-col bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-xl">
-          <button 
-            onClick={() => setViewState(prev => ({...prev, zoom: Math.min(prev.zoom + 1, 18)}))}
-            className="h-12 w-12 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 transition-all border-b border-white/5"
-          >
-            <Plus size={20} />
-          </button>
-          <button 
-            onClick={() => setViewState(prev => ({...prev, zoom: Math.max(prev.zoom - 1, 1)}))}
-            className="h-12 w-12 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 transition-all"
-          >
-            <Minus size={20} />
-          </button>
-        </div>
-      </div>
+      {/* NOTE: CONTROLS HAVE BEEN REMOVED HERE AS REQUESTED */}
 
       <div className="absolute top-6 left-6 z-[10] pointer-events-none opacity-30 mix-blend-overlay">
          <Layers size={24} className="text-white" />
