@@ -42,7 +42,6 @@ const getRelativeTime = (dateString: string) => {
   return `${Math.floor(diffInSeconds / 86400)}d`;
 };
 
-// Returns percentage (0-100) and color based on time left
 const getPostLife = (dateString: string) => {
     const created = new Date(dateString).getTime();
     const now = Date.now();
@@ -60,7 +59,6 @@ const getPostLife = (dateString: string) => {
     return { percent, color, status: Math.floor(remaining / (1000 * 60 * 60)) + 'h left' };
 };
 
-// --- MAIN COMPONENT ---
 export default function CityTalk() {
   const [deviceId, setDeviceId] = useState<string>("");
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -195,7 +193,9 @@ export default function CityTalk() {
   }, [selectedPost]);
 
   useEffect(() => {
-    repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (repliesEndRef.current) {
+        repliesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [replies]);
 
   const handleFindCity = async () => {
@@ -253,10 +253,18 @@ export default function CityTalk() {
     if (!replyInput.trim() || !selectedPost) return;
     const cleanReply = scrubSignal(replyInput); 
     const cleanName = talkerName || `Guest-${Math.floor(100 + Math.random() * 899)}`;
+    
     const { error } = await supabase.from('replies').insert([{
-      post_id: selectedPost.id, content: cleanReply, author_name: cleanName, device_id: deviceId
+      post_id: selectedPost.id, 
+      content: cleanReply, 
+      author_name: cleanName, 
+      device_id: deviceId
     }]);
-    if (!error) {
+
+    if (error) {
+        console.error("Reply Error:", error);
+        triggerToast("Failed to reply.");
+    } else {
       setReplyInput("");
     }
   };
@@ -265,7 +273,6 @@ export default function CityTalk() {
     const currentStep = loadingSequence[loadingStep];
     return (
       <main className="fixed inset-0 bg-[#020202] flex flex-col items-center justify-center z-[200] overflow-hidden">
-        {/* Loading UI is already centered and responsive */}
         <div className={`absolute h-[600px] w-[600px] rounded-full ${currentStep.color} opacity-10 blur-[150px] transition-all duration-1000 ease-in-out`} />
         <div className="relative flex flex-col items-center">
             <div className="relative h-48 w-48 flex items-center justify-center mb-16">
@@ -345,7 +352,7 @@ export default function CityTalk() {
 
   // --- MAIN APPLICATION ---
   return (
-    <main className="h-screen w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30">
+    <main className="h-[100dvh] w-screen overflow-hidden bg-zinc-900 text-white relative flex flex-col font-sans selection:bg-blue-500/30">
       
       {/* 1. Map Layer */}
       <div className="absolute inset-0 z-0 opacity-100">
@@ -432,61 +439,62 @@ export default function CityTalk() {
         </div>
       )}
 
-      {/* 4. Main Input (Responsive Layout) */}
-      <div className="mt-auto p-4 sm:p-8 relative z-20 w-full max-w-2xl mx-auto">
-        <div className="relative bg-zinc-900/95 backdrop-blur-2xl rounded-[2rem] sm:rounded-[2.5rem] p-2 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 focus-within:ring-white/20 transition-all">
-          <div className="relative flex flex-col">
-              <textarea 
-                disabled={hasActivePost} 
-                className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50" 
-                placeholder={hasActivePost ? "Message active..." : "Say something..."} 
-                rows={1} 
-                maxLength={200}
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-              />
-              
-              <div className="flex justify-between items-center px-2 sm:px-4 pb-2 pt-1">
-                <div className="flex items-center gap-2">
-                  <button onClick={handleFindCity} className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
-                    <MapPin size={14} />
-                    {/* Hide text on very small screens if needed, but flex wrap helps */}
-                    <span className="hidden xs:inline">{userLocation ? userLocation.city : "City"}</span>
-                    <span className="xs:hidden inline">{userLocation ? "Loc" : "City"}</span>
-                  </button>
+      {/* 4. MAIN INPUT (FIXED POSITION FOR MOBILE) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 sm:p-8 z-20 w-full flex justify-center pointer-events-none">
+        <div className="w-full max-w-2xl pointer-events-auto">
+            <div className="relative bg-zinc-900/95 backdrop-blur-2xl rounded-[2rem] sm:rounded-[2.5rem] p-2 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] ring-1 ring-white/5 focus-within:ring-white/20 transition-all mb-safe">
+            <div className="relative flex flex-col">
+                <textarea 
+                    disabled={hasActivePost} 
+                    className="w-full bg-transparent !border-none !ring-0 !outline-none px-4 sm:px-6 py-4 text-[15px] sm:text-[16px] resize-none text-white font-medium min-h-[60px] placeholder:text-zinc-500 disabled:opacity-50" 
+                    placeholder={hasActivePost ? "Message active..." : "Say something..."} 
+                    rows={1} 
+                    maxLength={200}
+                    value={input} 
+                    onChange={(e) => setInput(e.target.value)} 
+                />
+                
+                <div className="flex justify-between items-center px-2 sm:px-4 pb-2 pt-1">
+                    <div className="flex items-center gap-2">
+                    <button onClick={handleFindCity} className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${userLocation ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
+                        <MapPin size={14} />
+                        <span className="hidden xs:inline">{userLocation ? userLocation.city : "City"}</span>
+                        <span className="xs:hidden inline">{userLocation ? "Loc" : "City"}</span>
+                    </button>
 
-                  <button 
-                    onClick={() => !isNameLocked && setIsEditingName(!isEditingName)} 
-                    className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${isNameLocked ? 'text-zinc-400 cursor-default' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
-                     {isNameLocked ? <Lock size={14} /> : <Smile size={14} />}
-                     <span className="hidden xs:inline">{talkerName || "Name"}</span>
-                  </button>
+                    <button 
+                        onClick={() => !isNameLocked && setIsEditingName(!isEditingName)} 
+                        className={`h-9 px-3 sm:px-4 rounded-full flex items-center gap-2 text-[12px] font-bold transition-all ${isNameLocked ? 'text-zinc-400 cursor-default' : 'bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10'}`}>
+                        {isNameLocked ? <Lock size={14} /> : <Smile size={14} />}
+                        <span className="hidden xs:inline">{talkerName || "Name"}</span>
+                    </button>
+                    </div>
+
+                    <button 
+                    onClick={handlePost} 
+                    disabled={!userLocation || !input || hasActivePost} 
+                    className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed">
+                    <Send size={18} strokeWidth={2.5} className="-ml-0.5" /> 
+                    </button>
                 </div>
-
-                <button 
-                  onClick={handlePost} 
-                  disabled={!userLocation || !input || hasActivePost} 
-                  className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed">
-                  <Send size={18} strokeWidth={2.5} className="-ml-0.5" /> 
-                </button>
-              </div>
-          </div>
-          
-          {/* Edit Name Popup */}
-          {isEditingName && !isNameLocked && (
-            <div className="absolute bottom-full left-0 mb-4 ml-8 animate-in slide-in-from-bottom-2 fade-in z-50">
-               <div className="bg-zinc-800 border border-white/20 rounded-xl p-2 shadow-2xl flex items-center gap-2">
-                   <input 
-                     autoFocus 
-                     className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-32 sm:w-36 px-3 placeholder:text-zinc-500" 
-                     placeholder="Name..." 
-                     value={talkerName} 
-                     onChange={(e) => setTalkerName(e.target.value.substring(0, 15))} 
-                   />
-                   <button onClick={handleSaveName} className="bg-white text-black text-[11px] font-bold uppercase px-3 py-2 rounded-lg hover:bg-zinc-200">Save</button>
-               </div>
             </div>
-          )}
+            
+            {/* Edit Name Popup */}
+            {isEditingName && !isNameLocked && (
+                <div className="absolute bottom-full left-0 mb-4 ml-8 animate-in slide-in-from-bottom-2 fade-in z-50">
+                <div className="bg-zinc-800 border border-white/20 rounded-xl p-2 shadow-2xl flex items-center gap-2">
+                    <input 
+                        autoFocus 
+                        className="bg-transparent border-0 ring-0 focus:ring-0 text-sm font-bold text-white outline-none w-32 sm:w-36 px-3 placeholder:text-zinc-500" 
+                        placeholder="Name..." 
+                        value={talkerName} 
+                        onChange={(e) => setTalkerName(e.target.value.substring(0, 15))} 
+                    />
+                    <button onClick={handleSaveName} className="bg-white text-black text-[11px] font-bold uppercase px-3 py-2 rounded-lg hover:bg-zinc-200">Save</button>
+                </div>
+                </div>
+            )}
+            </div>
         </div>
       </div>
 
@@ -506,13 +514,8 @@ export default function CityTalk() {
             </button>
         )}
 
-        {/* SIDEBAR CONTAINER:
-            - w-full on Mobile
-            - sm:w-[440px] on Tablet/Desktop
-            - translate-x logic remains the same
-        */}
-        <div className={`fixed inset-y-0 right-0 w-full sm:w-[440px] z-[60] bg-zinc-900/95 backdrop-blur-3xl border-l border-white/10 shadow-2xl flex flex-col transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSidebarMinimized ? 'translate-x-full' : 'translate-x-0'}`}>
-          <div className="flex-none px-6 py-5 flex items-center justify-between border-b border-white/5 bg-zinc-900">
+        <div className={`fixed inset-y-0 right-0 h-[100dvh] w-full sm:w-[440px] z-[60] bg-zinc-900/95 backdrop-blur-3xl border-l border-white/10 shadow-2xl flex flex-col transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSidebarMinimized ? 'translate-x-full' : 'translate-x-0'}`}>
+          <div className="flex-none px-6 py-5 flex items-center justify-between border-b border-white/5 bg-zinc-900 mt-safe-top">
             <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400">
                     <Hash size={20} />
@@ -621,7 +624,7 @@ export default function CityTalk() {
             </div>
           </div>
 
-          <div className="flex-none p-4 sm:p-6 bg-zinc-900 border-t border-white/5">
+          <div className="flex-none p-4 sm:p-6 bg-zinc-900 border-t border-white/5 pb-safe">
             <div className="relative flex items-center gap-2 bg-zinc-800 rounded-[1.5rem] p-1.5 border border-white/5 focus-within:ring-2 focus-within:ring-blue-600/30 transition-all mb-4">
                 <textarea 
                   className="flex-1 bg-transparent border-0 py-3 pl-4 text-[14px] font-medium text-white placeholder:text-zinc-500 outline-none resize-none max-h-32 custom-scroll" 
