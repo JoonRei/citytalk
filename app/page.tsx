@@ -21,6 +21,7 @@ const MapInterface = dynamic(() => import('../components/MapInterface'), {
 // --- CONSTANTS ---
 const POST_TTL = 24 * 60 * 60 * 1000; 
 const SESSION_DURATION = 12 * 60 * 60 * 1000; 
+const NOTIFICATION_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; // Modern Glass Ping
 
 // --- UTILS ---
 const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
@@ -33,7 +34,6 @@ const scrubSignal = (text: string) => {
   return cleaned;
 };
 
-// --- DISTANCE HELPER ---
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -108,8 +108,20 @@ export default function CityTalk() {
   const typingTimeoutRef = useRef<any>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
+  // We use a ref for posts so the Realtime subscription always sees the latest data without restarting
+  const postsRef = useRef(posts);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const repliesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => { postsRef.current = posts; }, [posts]);
+
+  // --- AUDIO HELPER ---
+  const playNotificationSound = () => {
+    // Create a fresh audio instance for every sound to avoid overlap/state issues
+    const audio = new Audio(NOTIFICATION_SOUND);
+    audio.volume = 0.6;
+    audio.play().catch(err => console.log("Audio blocked:", err));
+  };
 
   const triggerToast = (msg: string) => {
     setToast(msg);
@@ -118,8 +130,7 @@ export default function CityTalk() {
 
   const triggerNotification = (author: string, msg: string) => {
     setNotification({ author, msg });
-    // Play the sound when notification triggers
-    audioRef.current?.play().catch(() => {});
+    playNotificationSound();
     setTimeout(() => setNotification(null), 5000);
   };
 
@@ -171,10 +182,6 @@ export default function CityTalk() {
       }
     }
     setDeviceId(storedId);
-    
-    // 🔊 PREMIUM SOUND SETUP
-    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'); 
-    audioRef.current.volume = 0.5; 
 
     const timer = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(timer);
@@ -206,21 +213,31 @@ export default function CityTalk() {
         if (selectedPost?.id === payload.old.id) setSelectedPost(null);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'replies' }, (payload) => {
+        // 1. Handle Chat Window Updates
         if (selectedPost && payload.new.post_id === selectedPost.id) {
            setReplies(prev => [...prev, payload.new]);
-           if (payload.new.device_id !== deviceId) setRemoteTyping(false);
-           
-           // If chat is OPEN and someone else replies, play a soft sound too
            if (payload.new.device_id !== deviceId) {
-             // --- FIX: Cast to HTMLAudioElement here ---
-             (audioRef.current?.cloneNode(true) as HTMLAudioElement)?.play().catch(() => {});
+                setRemoteTyping(false);
+                // If we are looking at the chat, just play a soft sound, no banner needed
+                playNotificationSound();
            }
         }
 
-        if (selectedPost && selectedPost.device_id === deviceId && payload.new.device_id !== deviceId) {
-             if (isSidebarMinimized) {
-                triggerNotification(payload.new.author_name, payload.new.content);
-             } 
+        // 2. Handle GLOBAL Notifications (Even if panel is closed)
+        const newReply = payload.new;
+        if (newReply.device_id !== deviceId) {
+             // Find if this reply belongs to any of MY posts
+             const parentPost = postsRef.current.find(p => p.id === newReply.post_id);
+             
+             if (parentPost && parentPost.device_id === deviceId) {
+                 // It IS my post!
+                 // If I am NOT currently looking at this specific post (or sidebar is minimized), show banner
+                 const isViewingThisPost = selectedPost && selectedPost.id === newReply.post_id && !isSidebarMinimized;
+                 
+                 if (!isViewingThisPost) {
+                     triggerNotification(newReply.author_name, newReply.content);
+                 }
+             }
         }
       })
       .on('broadcast', { event: 'typing' }, (payload) => {
@@ -341,6 +358,15 @@ export default function CityTalk() {
   };
 
   const handleStartTalking = () => {
+    // --- BROWSER AUDIO UNLOCK ---
+    // Browsers block audio unless triggered by a user click.
+    // We play a silent sound here to "unlock" the audio context for later notifications.
+    const unlockAudio = new Audio(NOTIFICATION_SOUND);
+    unlockAudio.volume = 0; 
+    unlockAudio.play().then(() => {
+        unlockAudio.pause();
+    }).catch((e) => console.log("Audio unlock deferred", e));
+
     setIsInitializing(true); 
     let step = 0; 
     const interval = setInterval(() => { 
@@ -517,7 +543,13 @@ export default function CityTalk() {
       {notification && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[160] animate-in fade-in zoom-in slide-in-from-top-4 w-full px-4 flex justify-center pointer-events-none">
             <button 
-               onClick={() => { setIsSidebarMinimized(false); setNotification(null); }}
+               onClick={() => { 
+                   // If they click the banner, we find that post and open it
+                   const targetPost = posts.find(p => p.author_name === notification.author || p.content === notification.msg); // Heuristic
+                   if (targetPost) setSelectedPost(targetPost);
+                   setIsSidebarMinimized(false); 
+                   setNotification(null); 
+               }}
                className="pointer-events-auto flex items-center gap-4 bg-zinc-900/90 backdrop-blur-xl border border-blue-500/30 p-4 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] max-w-sm w-full hover:bg-zinc-800 transition-all group"
             >
                 <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
