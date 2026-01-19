@@ -21,7 +21,6 @@ const MapInterface = dynamic(() => import('../components/MapInterface'), {
 // --- CONSTANTS ---
 const POST_TTL = 24 * 60 * 60 * 1000; 
 const SESSION_DURATION = 12 * 60 * 60 * 1000; 
-const NOTIFICATION_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; // Modern Glass Ping
 
 // --- UTILS ---
 const BANNED_WORDS = ['foul', 'badword', 'offensive', 'toxic', 'spam']; 
@@ -108,19 +107,17 @@ export default function CityTalk() {
   const typingTimeoutRef = useRef<any>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
-  // We use a ref for posts so the Realtime subscription always sees the latest data without restarting
   const postsRef = useRef(posts);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const repliesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { postsRef.current = posts; }, [posts]);
 
-  // --- AUDIO HELPER ---
-  const playNotificationSound = () => {
-    // Create a fresh audio instance for every sound to avoid overlap/state issues
-    const audio = new Audio(NOTIFICATION_SOUND);
-    audio.volume = 0.6;
-    audio.play().catch(err => console.log("Audio blocked:", err));
+  // --- VIBRATION HELPER ---
+  const triggerVibration = () => {
+    // Only works on mobile/supported devices
+    if (navigator.vibrate) {
+        navigator.vibrate(200); // Vibrate for 200ms
+    }
   };
 
   const triggerToast = (msg: string) => {
@@ -130,7 +127,7 @@ export default function CityTalk() {
 
   const triggerNotification = (author: string, msg: string) => {
     setNotification({ author, msg });
-    playNotificationSound();
+    triggerVibration(); // Use vibration instead of sound
     setTimeout(() => setNotification(null), 5000);
   };
 
@@ -218,20 +215,17 @@ export default function CityTalk() {
            setReplies(prev => [...prev, payload.new]);
            if (payload.new.device_id !== deviceId) {
                 setRemoteTyping(false);
-                // If we are looking at the chat, just play a soft sound, no banner needed
-                playNotificationSound();
+                // Trigger small haptic feedback if chat is open
+                triggerVibration();
            }
         }
 
         // 2. Handle GLOBAL Notifications (Even if panel is closed)
         const newReply = payload.new;
         if (newReply.device_id !== deviceId) {
-             // Find if this reply belongs to any of MY posts
              const parentPost = postsRef.current.find(p => p.id === newReply.post_id);
              
              if (parentPost && parentPost.device_id === deviceId) {
-                 // It IS my post!
-                 // If I am NOT currently looking at this specific post (or sidebar is minimized), show banner
                  const isViewingThisPost = selectedPost && selectedPost.id === newReply.post_id && !isSidebarMinimized;
                  
                  if (!isViewingThisPost) {
@@ -358,15 +352,6 @@ export default function CityTalk() {
   };
 
   const handleStartTalking = () => {
-    // --- BROWSER AUDIO UNLOCK ---
-    // Browsers block audio unless triggered by a user click.
-    // We play a silent sound here to "unlock" the audio context for later notifications.
-    const unlockAudio = new Audio(NOTIFICATION_SOUND);
-    unlockAudio.volume = 0; 
-    unlockAudio.play().then(() => {
-        unlockAudio.pause();
-    }).catch((e) => console.log("Audio unlock deferred", e));
-
     setIsInitializing(true); 
     let step = 0; 
     const interval = setInterval(() => { 
@@ -540,12 +525,12 @@ export default function CityTalk() {
       )}
 
       {/* 4. NEW MESSAGE NOTIFICATION (Interactive) */}
+      {/* ENSURED TOP PLACEMENT & HIGH Z-INDEX */}
       {notification && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[160] animate-in fade-in zoom-in slide-in-from-top-4 w-full px-4 flex justify-center pointer-events-none">
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[170] animate-in fade-in zoom-in slide-in-from-top-4 w-full px-4 flex justify-center pointer-events-none">
             <button 
                onClick={() => { 
-                   // If they click the banner, we find that post and open it
-                   const targetPost = posts.find(p => p.author_name === notification.author || p.content === notification.msg); // Heuristic
+                   const targetPost = posts.find(p => p.author_name === notification.author || p.content === notification.msg);
                    if (targetPost) setSelectedPost(targetPost);
                    setIsSidebarMinimized(false); 
                    setNotification(null); 
